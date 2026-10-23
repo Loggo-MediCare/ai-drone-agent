@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "_note": "範例格式，不是真實禁限航區。請從 https://drone.caa.gov.tw 查詢後填入，並在對照正式公告後把 verified 改成 true。",
+  "retrieved_at": "2026-10-23T09:00:00+08:00",
+  "verified": false,
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"name": "EXAMPLE restricted zone"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[120.340, 22.600], [120.350, 22.600], [120.350, 22.610], [120.340, 22.610], [120.340, 22.600]]]
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "simulation": true,
+  "_note": "示範資料，不是真實飛航許可或實際觀測。真實資料模式請參考 mission_input.real.example.json。",
+  "mission": {
+    "name": "Kaohsiung practice",
+    "start": [22.62, 120.31],
+    "goal": [22.63, 120.32],
+    "altitude_m": 60,
+    "airspeed_kmh": 36
+  },
+  "weather": {
+    "source": "SIMULATED",
+    "wind_speed_mps": 3.0,
+    "temperature_c": 27.0,
+    "rain": false
+  },
+  "airspace": {
+    "source": "SIMULATED",
+    "restricted": false,
+    "verified": false
+  },
+  "notam": {
+    "source": "SIMULATED",
+    "notam_clear": true,
+    "verified": false
+  },
+  "battery": {
+    "source": "SIMULATED",
+    "remaining_percent": 85
+  },
+  "route": {
+    "source": "SIMULATED",
+    "obstacles": [
+      {"name": "practice tower", "area": {"type": "circle", "center": [22.625, 120.315], "radius_m": 40}}
+    ],
+    "protected_areas": []
+  }
+}

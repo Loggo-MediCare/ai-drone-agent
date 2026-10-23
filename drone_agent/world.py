@@ -43,6 +43,7 @@ class Environment:
     greenbelt: Rect = Rect(3500, -1500, 4200, 1500)
     greenbelt_authorized: bool = True
     greenbelt_auth_ref: str = "NCC-UAV-2025-0017"
+    protected_areas: list = field(default_factory=list)   # 其他保護區：[(name, Rect, authorized), …]
     obstacles: list = field(default_factory=lambda: [Rect(4950, -60, 5050, 60)])  # 通訊塔
     weather_frozen_at: float = None       # 設定後天氣資料停在這個時間戳（模擬 API 斷線）
 
@@ -59,11 +60,10 @@ class Environment:
         return Reading("AIRSPACE", {"notams": published}, t)
 
     def read_parks(self, t):
-        return Reading("PARKS", {
-            "greenbelt": self.greenbelt,
-            "overflight_authorized": self.greenbelt_authorized,
-            "authorization_reference": self.greenbelt_auth_ref if self.greenbelt_authorized else None,
-        }, t)
+        areas = list(self.protected_areas)
+        if self.greenbelt is not None:
+            areas.insert(0, ("Greenbelt", self.greenbelt, self.greenbelt_authorized))
+        return Reading("PARKS", {"areas": areas}, t)
 
     def notam_pushed(self, t_prev, t):
         """這段時間內是否收到新的 NOTAM 推播。"""

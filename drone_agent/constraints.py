@@ -64,8 +64,7 @@ def active_notams(airspace_reading, now):
 def blocked_areas(airspace_reading, parks_reading, now):
     """規劃器必須避開的區域：生效中的 NOTAM＋未授權的綠帶。"""
     areas = [n.area for n in active_notams(airspace_reading, now)]
-    if not parks_reading.data["overflight_authorized"]:
-        areas.append(parks_reading.data["greenbelt"])
+    areas += [rect for name, rect, authorized in parks_reading.data["areas"] if not authorized]
     return areas
 
 
@@ -106,10 +105,11 @@ def evaluate_envelope(now, weather, airspace, parks, soc, path, altitude_m, airs
     p = parks.data
     if _stale(parks, now):
         d["PARKS"] = DomainStatus(STALE, f"data age {now - parks.timestamp:.0f}s")
-    elif path_intersects(path, p["greenbelt"]) and not p["overflight_authorized"]:
-        d["PARKS"] = DomainStatus(RED, "greenbelt overflight not authorized")
     else:
-        d["PARKS"] = DomainStatus(GREEN)
+        hits = [name for name, rect, authorized in p["areas"]
+                if not authorized and path_intersects(path, rect)]
+        d["PARKS"] = (DomainStatus(RED, f"overflight not authorized: {', '.join(hits)}")
+                      if hits else DomainStatus(GREEN))
 
     # BATTERY：逐點預估電量（含起飛爬升與降落的懸停時間）
     bad = []

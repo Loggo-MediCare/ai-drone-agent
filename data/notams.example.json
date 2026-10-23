@@ -1,0 +1,13 @@
+{
+  "_note": "範例格式，不是真實 NOTAM。請從 https://ais.anws.gov.tw 查詢後填入，並在核對後把 verified 改成 true。",
+  "retrieved_at": "2026-10-23T09:00:00+08:00",
+  "verified": false,
+  "notams": [
+    {
+      "id": "EXAMPLE-A0001/26",
+      "valid_from": "2026-10-23T08:00:00+08:00",
+      "valid_until": "2026-10-23T18:00:00+08:00",
+      "area": {"type": "circle", "center": [22.700, 120.400], "radius_m": 1000}
+    }
+  ]
+}

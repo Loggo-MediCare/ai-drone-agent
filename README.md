@@ -18,7 +18,7 @@
 ```
 python demo.py            # 9 個任務情境（每個完整任務約 30 秒模擬時間）
 python demo.py 6 8        # 只跑指定情境
-python -m unittest discover -s tests -t . -v   # 18 個測試
+python -m unittest discover -s tests -t . -v   # 37 個測試
 python calibrate.py       # 量測懸停/巡航功率，校正電池估算
 ```
 
@@ -82,9 +82,70 @@ python demo.py --llm
 - 電量事前估算以 `calibrate.py` 的量測擬合，再乘 1.2 倍保守裕度；測試確認實際剩餘電量不低於估算值。
 - 平面座標以起降點為原點（公尺），禁航區與綠帶以矩形表示。
 
+## 關於控制迴圈的頻率（重要）
+
+本專案的 100 Hz 軌跡層與 1 kHz 伺服層是**模擬時間**：每一步代表 10 ms／1 ms 的物理時間，但 Python 並不保證在真實的 10 ms／1 ms 內完成（實際上約以 2.7 倍速跑完）。測試通過只代表控制邏輯正確，**不代表具備即時性**。真實無人機的姿態與馬達閉迴路必須交給 PX4 等具備時序保證的飛控執行；本專案的 Python 部分只適合任務層與運動層。
+
+## 資料輸入層（`drone_agent/inputs/`）
+
+統一的任務輸入檔 `data/mission_input.json` → 各資料來源轉接器 → **起飛前資料閘門** → 模擬器。
+
+```
+python run_mission.py                                         # 模擬模式範例（高雄練習航線）
+python run_mission.py data/mission_input.real.example.json    # 真實資料模式範例（目前會被拒絕，見下方）
+python run_mission.py data/mission_input.json --llm           # 用 GPT 規劃
+```
+
+### 資料來源
+
+| 領域 | 來源 | 轉接器 | 取得方式 | 狀態 |
+|---|---|---|---|---|
+| 天氣、風速、降雨 | [中央氣象署開放資料](https://opendata.cwa.gov.tw) O-A0001-001 自動氣象站 | `cwa_weather.py` | 申請會員授權碼，放進 `.env` 的 `CWA_API_KEY` | 已實作 API 呼叫；以樣本資料測試，**尚未用真實授權碼驗證** |
+| 禁限航區 | [民航局無人機管理系統](https://drone.caa.gov.tw) | `airspace.load_caa_geojson()` | 查詢後整理成 GeoJSON（無本專案可用的公開 API） | 檔案匯入＋人工核實 |
+| NOTAM | [臺北飛航情報服務系統](https://ais.anws.gov.tw) | `airspace.load_notam_file()` | 查詢後整理成 JSON（格式見 `data/notams.example.json`） | 檔案匯入＋人工核實 |
+| 電池、GPS、解鎖狀態 | PX4 SITL／飛控，經 [MAVSDK](https://mavsdk.mavlink.io) | `telemetry.py` | `pip install mavsdk`，啟動 PX4 SITL（預設 `udp://:14540`） | **唯讀**；尚未接 SITL 實測 |
+| 障礙物、保護區 | GIS、現場勘查 | `builder._gis()` | 寫在 `mission_input.json` 的 `route` | 需現場核實 |
+| GPT | [OpenAI API Keys](https://platform.openai.com/api-keys) | `llm_planner.py` | `.env` 的 `OPENAI_API_KEY` | 已實測 |
+
+民航局圖資僅供參考，仍以正式公告為準；NOTAM 以飛航情報系統公告為準。
+
+### 兩種模式
+
+| | 模擬模式 `"simulation": true` | 真實資料模式 `"simulation": false` |
+|---|---|---|
+| `SIMULATED` 來源 | 允許 | **拒絕** |
+| 未核實（`verified: false`） | 允許 | **拒絕**（空域、NOTAM、GIS 必須由操作員對照正式公告／現場核實） |
+| 資料過期、缺失、錯誤 | 拒絕 | 拒絕 |
+| `restricted: true`、`notam_clear: false` | 拒絕 | — |
+| 飛行 | 模擬 | **仍然是模擬**，不連接任何真實馬達 |
+
+新鮮度上限（真實來源）：天氣 30 分鐘（CWA 每 10 分鐘觀測、另有發布延遲）、NOTAM 1 小時、禁限航區 7 天、遙測 5 秒。
+
+### 轉換規則
+
+- 經緯度以起點為原點換成平面公尺座標（等距矩形近似）。
+- 多邊形、圓形區域一律換成**外接矩形**：比實際區域大，屬保守處理。
+- 禁限航區視為永久限制；NOTAM 依生效時間換算成以起飛為 0 的模擬秒數。
+- CWA 以 `-99` 表示缺值：缺少風速、氣溫或降雨時回報 ERROR，**不會猜測數值**。
+- 資料是起飛時的快照；飛行中持續更新外部資料尚未實作。
+
+### 用 `mission_input.real.example.json` 實際會看到
+
+```
+WEATHER   CWA          MISSING    CWA_API_KEY not set
+AIRSPACE  CAA_GEOJSON  OK         （範例檔 verified=false）
+NOTAM     AIS_FILE     STALE      （範例檔是過去的時間）
+TELEMETRY MAVSDK       MISSING    mavsdk not installed
+GIS       GIS_SURVEY   OK         （verified=false）
+起飛前資料閘門：拒絕起飛
+```
+
+要讓它通過：申請 CWA 授權碼、填入真實並核實過的禁限航區與 NOTAM、啟動 PX4 SITL、完成航線現場核實。
+
 ## 下一步
 
-1. 把 `SafetyMonitor` 與任務層接上 **PX4 / ArduPilot SITL**，航點改用 MAVLink 下達（取代 `servo.py`、`physics.py`）。
-2. 天氣改接中央氣象署開放資料；空域限制改接民航局無人機相關公告。
-3. 運動層加入動態障礙物（其他飛行器、鳥群），RRT* 改為增量式重規劃。
-4. 以 NVIDIA Isaac Sim 做視覺感知，更新世界模型的信念狀態 b(s)。
+1. 接上 **PX4 SITL** 實測 `telemetry.py`，再把航點改用 MAVLink 下達給 SITL（取代 `servo.py`、`physics.py`；真實姿態與馬達迴路由 PX4 負責）。
+2. 用真實 CWA 授權碼驗證 `cwa_weather.py` 的欄位解析。
+3. 飛行中定期重新讀取天氣與 NOTAM（目前只在起飛前讀一次）。
+4. 運動層加入動態障礙物，RRT* 改為增量式重規劃。
+5. 以 NVIDIA Isaac Sim 做視覺感知，更新世界模型的信念狀態 b(s)。

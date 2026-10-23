@@ -1,0 +1,39 @@
+{
+  "success": "true",
+  "result": {"resource_id": "O-A0001-001"},
+  "records": {
+    "Station": [
+      {
+        "StationName": "測試站甲",
+        "StationId": "TEST01",
+        "ObsTime": {"DateTime": "2026-10-23T14:50:00+08:00"},
+        "GeoInfo": {"Coordinates": [
+          {"CoordinateName": "TWD67", "StationLatitude": 22.618, "StationLongitude": 120.302},
+          {"CoordinateName": "WGS84", "StationLatitude": 22.621, "StationLongitude": 120.311}
+        ]},
+        "WeatherElement": {
+          "Weather": "多雲",
+          "Now": {"Precipitation": 0.0},
+          "WindDirection": 315.0,
+          "WindSpeed": 3.2,
+          "AirTemperature": 27.4,
+          "GustInfo": {"PeakGustSpeed": 6.1}
+        }
+      },
+      {
+        "StationName": "測試站乙",
+        "StationId": "TEST02",
+        "ObsTime": {"DateTime": "2026-10-23T14:50:00+08:00"},
+        "GeoInfo": {"Coordinates": [
+          {"CoordinateName": "WGS84", "StationLatitude": 22.90, "StationLongitude": 120.60}
+        ]},
+        "WeatherElement": {
+          "Now": {"Precipitation": -99},
+          "WindSpeed": -99,
+          "AirTemperature": 25.0,
+          "GustInfo": {"PeakGustSpeed": -99}
+        }
+      }
+    ]
+  }
+}
