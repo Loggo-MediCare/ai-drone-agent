@@ -275,8 +275,9 @@ class MissionSupervisor:
             elif self.traj.arrived(self.body) and not self.traj.hold:
                 cmd = self.route[self.idx]
                 self._log(t, f"抵達 {cmd.label}，電量 {self.soc:.0%}")
+                # 只有真的飛到測量點座標才算完成（規劃器可能把其他點也標成 WP1）
                 for item in list(self.remaining_survey):
-                    if item[0] == cmd.label:
+                    if item[0] == cmd.label and dist(item[1], self.body.xy) < 10:
                         self.remaining_survey.remove(item)
                         self.surveyed.append(cmd.label)
                 self.idx += 1

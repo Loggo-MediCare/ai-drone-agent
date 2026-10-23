@@ -7,7 +7,7 @@ LLM 只能提出航線，不能宣告「可以飛」。
 from dataclasses import dataclass, field
 
 from .energy import PROJECTION_MARGIN, estimated_power_w, soc_drain, soc_for_distance
-from .geometry import dist, path_intersects
+from .geometry import dist, path_intersects, segment_intersects_rect
 from .trajectory import CLIMB_MS, DESCENT_MS
 
 GREEN, RED, STALE = "GREEN", "RED", "STALE"
@@ -92,8 +92,15 @@ def evaluate_envelope(now, weather, airspace, parks, soc, path, altitude_m, airs
     if _stale(airspace, now):
         d["AIRSPACE"] = DomainStatus(STALE, f"data age {now - airspace.timestamp:.0f}s")
     else:
-        hits = [n.alert_id for n in active_notams(airspace, now) if path_intersects(path, n.area)]
-        d["AIRSPACE"] = DomainStatus(RED, "route crosses " + ", ".join(hits)) if hits else DomainStatus(GREEN)
+        hits = []
+        for n in active_notams(airspace, now):
+            legs = [f"leg {i + 1} ({a[0]:.0f},{a[1]:.0f})→({b[0]:.0f},{b[1]:.0f})"
+                    for i, (a, b) in enumerate(zip(path, path[1:])) if segment_intersects_rect(a, b, n.area)]
+            if legs:
+                r = n.area
+                hits.append(f"{', '.join(legs)} crosses {n.alert_id} "
+                            f"[x {r.xmin:.0f}..{r.xmax:.0f}, y {r.ymin:.0f}..{r.ymax:.0f}]")
+        d["AIRSPACE"] = DomainStatus(RED, "; ".join(hits)) if hits else DomainStatus(GREEN)
 
     # PARKS
     p = parks.data

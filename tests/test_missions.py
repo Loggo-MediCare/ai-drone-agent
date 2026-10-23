@@ -52,6 +52,23 @@ class MissionTests(unittest.TestCase):
         self.assertEqual(r.status, "COMPLETED", r.log)
         self.assertEqual(r.holds, 1)
 
+    def test_survey_credit_requires_reaching_the_point(self):
+        class MislabellingPlanner(RuleBasedPlanner):
+            name = "mislabelling"
+
+            def plan(self, req):
+                cmds = super().plan(req)
+                if cmds and not req.remaining_survey:   # 返航計畫：把目前位置標成 WP1
+                    from drone_agent.safety import WaypointCommand
+                    x, y = req.start
+                    cmds.insert(0, WaypointCommand(x, y, cmds[0].altitude_m, cmds[0].airspeed_kmh, "WP1"))
+                return cmds
+
+        n = Notam("TFR", Rect(250, -2000, 450, 2000), valid_from=10, valid_until=1e9, published_at=10)
+        r, sup = fly(Environment(notams=[n], obstacles=TOWER), planner=MislabellingPlanner())
+        self.assertEqual(r.status, "RETURNED_HOME", r.log)
+        self.assertEqual(r.surveyed, [])
+
     def test_unsafe_plan_rejected_then_replanned(self):
         r, sup = fly(planner=OverEagerPlanner())
         self.assertEqual(r.status, "COMPLETED")
