@@ -1,0 +1,4 @@
+# 只有 `python demo.py --llm` 需要；核心模擬只用 Python 標準函式庫
+langchain-openai>=0.1.23
+pydantic>=2.8.2
+python-dotenv>=1.0.1
