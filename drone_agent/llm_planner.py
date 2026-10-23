@@ -1,55 +1,53 @@
-"""LLM 規劃器（選用）：讓 GPT 依操作員指令提出航點。
+"""GPT 任務規劃器（選用）：只決定測量點順序、任務優先順序與是否建議返航。
+
+GPT **不產生座標、航線或馬達指令**，也不能宣告測量完成：
+- 回傳的順序必須剛好是剩餘測量點 ID 的一個排列（validate_decision 檢查）。
+- 航線幾何由 RoutePlanner（RRT*）計算；安全層獨立檢查每一段。
+- 測量完成由監督器依實際位置判定。
 
 需要：pip install -r requirements-llm.txt，以及 .env 中的 OPENAI_API_KEY。
-LLM 只「提案」；約束包絡與 SafetyMonitor 仍由程式碼決定能不能飛，
-提案不合格時把拒絕原因回饋給 LLM 重新規劃（Listing 16.3 的回饋迴圈）。
 """
 import os
 
 from pydantic import BaseModel, Field
 
-from .safety import WaypointCommand
+from .planner import MissionDecision
 
 
-class _Waypoint(BaseModel):
-    label: str = Field(description="WP1..WP4, HOME, or DETOUR-n")
-    x_m: float
-    y_m: float
-    altitude_m: float
-    airspeed_kmh: float
-
-
-class _Plan(BaseModel):
-    waypoints: list[_Waypoint]
+class _Decision(BaseModel):
+    order: list[str] = Field(description="All remaining survey waypoint IDs, each exactly once, in flight order")
+    return_home: bool = Field(description="True only if continuing the mission is unwise")
+    reason: str
 
 
 class LLMPlanner:
     name = "llm"
 
-    def __init__(self, model=None, instruction="Survey the corridor waypoints in order, then return home."):
+    def __init__(self, model=None, instruction="Survey all remaining waypoints efficiently, then return home."):
         from langchain_openai import ChatOpenAI
         self.instruction = instruction
         self._llm = ChatOpenAI(
             model=model or os.getenv("OPENAI_MODEL", "gpt-4o"), temperature=0
-        ).with_structured_output(_Plan)
+        ).with_structured_output(_Decision)
 
-    def plan(self, req):
-        m = req.mission
-        areas = [f"x {a.xmin}..{a.xmax}, y {a.ymin}..{a.ymax}" for a in req.blocked_areas] or ["none"]
+    def build_prompt(self, req):
+        remaining = ", ".join(f"{wid} at ({p[0]:.0f}, {p[1]:.0f}) m" for wid, p in req.remaining)
         prompt = (
-            f"You plan drone waypoints on a flat x/y metre grid. Operator: {self.instruction}\n"
-            f"Start: {req.start}. Home: {m.home}.\n"
-            f"Remaining survey waypoints (must visit in order): {req.remaining_survey}.\n"
-            f"Altitude {m.altitude_m} m, airspeed {m.airspeed_kmh} km/h.\n"
-            f"Geofence: x {m.geofence.xmin}..{m.geofence.xmax}, y {m.geofence.ymin}..{m.geofence.ymax}.\n"
-            f"Restricted areas (no straight leg may cross them): {'; '.join(areas)}.\n"
-            "End with HOME."
+            "You are the mission-planning layer of a survey drone. You only decide the ORDER of the "
+            "remaining survey waypoints and whether to recommend returning home. You do not plan geometry: "
+            "a separate deterministic planner computes every route and detour, and an independent safety "
+            "supervisor checks it.\n"
+            f"Operator: {self.instruction}\n"
+            f"Vehicle position: ({req.position[0]:.0f}, {req.position[1]:.0f}) m. Home: {req.mission.home}. "
+            f"Battery: {req.soc:.0%}.\n"
+            f"Remaining survey waypoints: {remaining}.\n"
+            f"Constraint envelope: {req.envelope_summary or 'not yet evaluated'}.\n"
+            "Return every remaining waypoint ID exactly once."
         )
         if req.feedback:
-            prompt += f"\nYour previous plan was rejected: {req.feedback}. Replan within the constraints."
-        try:
-            plan = self._llm.invoke(prompt)
-        except Exception as e:  # 網路、金鑰、配額錯誤：當作無法規劃
-            print(f"[llm] planning failed: {e}")
-            return None
-        return [WaypointCommand(w.x_m, w.y_m, w.altitude_m, w.airspeed_kmh, w.label) for w in plan.waypoints]
+            prompt += f"\nThe previous plan was rejected: {req.feedback}"
+        return prompt
+
+    def decide(self, req):
+        d = self._llm.invoke(self.build_prompt(req))
+        return MissionDecision(list(d.order), bool(d.return_home), d.reason)

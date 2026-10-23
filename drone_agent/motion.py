@@ -1,6 +1,6 @@
 """運動規劃層（1–10 Hz）：RRT* 計算從目前位置到目標航點的無碰撞路徑。
 
-障礙物 = 世界模型中的實體障礙（如高塔）＋約束包絡的禁航區，各外擴安全距離。
+輸入的 keepouts 是「已經外擴過安全距離」的禁區（見 route_planner.keepouts）。
 直線無碰撞時直接採用直線；否則跑 RRT*，再做捷徑平滑。
 固定亂數種子，使模擬可重現。
 """
@@ -9,7 +9,11 @@ import random
 
 from .geometry import Rect, dist, segment_intersects_rect
 
-CLEARANCE_M = 50.0
+CLEARANCE_M = 50.0   # 實體障礙物的外擴距離
+
+
+def inflate(rects, margin):
+    return [Rect(r.xmin - margin, r.ymin - margin, r.xmax + margin, r.ymax + margin) for r in rects]
 
 
 class MotionPlanner:
@@ -23,21 +27,22 @@ class MotionPlanner:
         self.rrt_runs = 0
 
     @staticmethod
-    def _inflate(obstacles):
-        c = CLEARANCE_M
-        return [Rect(r.xmin - c, r.ymin - c, r.xmax + c, r.ymax + c) for r in obstacles]
-
-    @staticmethod
     def _free(a, b, obs):
         return not any(segment_intersects_rect(a, b, r) for r in obs)
 
-    def path_valid(self, path, obstacles):
-        obs = self._inflate(obstacles)
+    @staticmethod
+    def _escapable(start, keepouts):
+        # 已經身處某個外擴區內（例如 NOTAM 剛生效）時，該區不能阻止離開；
+        # 是否真的進入原始禁區由安全層另外檢查。
+        return [r for r in keepouts if not r.contains(start)]
+
+    def path_valid(self, path, keepouts):
+        obs = self._escapable(path[0], keepouts) if path else keepouts
         return all(self._free(a, b, obs) for a, b in zip(path, path[1:]))
 
-    def plan(self, start, goal, obstacles):
-        obs = self._inflate(obstacles)
-        if any(r.contains(goal) for r in obs):
+    def plan(self, start, goal, keepouts):
+        obs = self._escapable(start, keepouts)
+        if any(r.contains(goal) for r in keepouts):
             return None
         if self._free(start, goal, obs):
             return [start, goal]

@@ -1,10 +1,18 @@
-"""任務規劃層（0.1–1 Hz）：提出航點，不負責判斷是否安全。"""
+"""任務規劃層（0.1–1 Hz）：只決定「做什麼」，不產生任何幾何路徑。
+
+規劃器（規則式或 GPT）輸出 MissionDecision：
+    - order：剩餘測量點 ID 的飛行順序（必須剛好是剩餘 ID 的一個排列）
+    - return_home：是否建議返航
+    - reason：理由
+
+航線幾何（含繞行禁航區）一律由 route_planner.RoutePlanner 用 RRT* 計算；
+任務完成狀態一律由監督器依實際位置判定。規劃器的輸出無法影響這兩者。
+"""
 from dataclasses import dataclass, field
 
-from .geometry import Rect, segment_intersects_rect
-from .safety import WaypointCommand
+from .geometry import Rect
 
-DETOUR_MARGIN_M = 100.0
+DEFAULT_EXCLUSION_CLEARANCE_M = 100.0
 
 
 @dataclass
@@ -18,60 +26,64 @@ class Mission:
     altitude_m: float = 60.0
     airspeed_kmh: float = 36.0
     geofence: Rect = Rect(-500, -1500, 7000, 1500)
+    exclusion_clearance_m: float = DEFAULT_EXCLUSION_CLEARANCE_M   # 禁航區外擴安全距離
+
+    def point(self, wid):
+        return dict(self.survey).get(wid)
+
+    def validate(self):
+        issues = []
+        ids = [wid for wid, _ in self.survey]
+        dupes = sorted({wid for wid in ids if ids.count(wid) > 1})
+        if dupes:
+            issues.append(f"duplicate waypoint id: {', '.join(dupes)}")
+        if any(not wid or wid == "HOME" for wid in ids):
+            issues.append("waypoint id must be non-empty and not 'HOME'")
+        if not ids:
+            issues.append("mission has no survey waypoints")
+        if self.exclusion_clearance_m < 0:
+            issues.append("exclusion clearance must be ≥ 0")
+        return issues
 
 
 @dataclass
-class PlanRequest:
-    start: tuple
+class MissionRequest:
+    """給任務規劃器的資訊；規劃器看得到狀態，但改不了狀態。"""
     mission: Mission
-    remaining_survey: list            # [(label, (x, y)), ...]
-    blocked_areas: list
+    position: tuple
+    soc: float
+    remaining: list                  # [(id, (x, y)), …]
+    envelope_summary: str = ""
     feedback: str = None
 
 
+@dataclass
+class MissionDecision:
+    order: list
+    return_home: bool = False
+    reason: str = ""
+
+
+def validate_decision(decision, remaining_ids):
+    """回傳 None 表示可接受；否則回傳拒絕原因（會回饋給規劃器）。"""
+    if decision.return_home:
+        return None
+    order = list(decision.order)
+    dupes = sorted({w for w in order if order.count(w) > 1})
+    if dupes:
+        return f"duplicate waypoint id in order: {', '.join(dupes)}"
+    unknown = [w for w in order if w not in remaining_ids]
+    if unknown:
+        return f"unknown or already-completed waypoint id: {', '.join(unknown)}"
+    missing = [w for w in remaining_ids if w not in order]
+    if missing:
+        return f"order omits remaining waypoint(s): {', '.join(missing)} (completion is decided by the vehicle, not the planner)"
+    return None
+
+
 class RuleBasedPlanner:
-    """確定性規劃器：依序飛完剩餘測量點後返航，遇到禁區就從上方或下方繞過。"""
+    """確定性任務規劃器：照任務定義的順序飛完剩餘測量點。"""
     name = "rule-based"
 
-    def plan(self, req):
-        m = req.mission
-        stops = list(req.remaining_survey) + [("HOME", m.home)]
-        for label, p in stops:
-            if any(a.contains(p) for a in req.blocked_areas):
-                return None   # 測量點本身在禁區內，無法完成
-        cmds, pos = [], req.start
-        for label, p in stops:
-            legs = self._route_leg(pos, p, req.blocked_areas, m.geofence)
-            if legs is None:
-                return None
-            for i, q in enumerate(legs[:-1]):
-                cmds.append(WaypointCommand(q[0], q[1], m.altitude_m, m.airspeed_kmh, f"DETOUR-{label}-{i + 1}"))
-            cmds.append(WaypointCommand(p[0], p[1], m.altitude_m, m.airspeed_kmh, label))
-            pos = p
-        return cmds
-
-    def _route_leg(self, a, b, blocked, geofence, depth=0):
-        hit = next((r for r in blocked if segment_intersects_rect(a, b, r)), None)
-        if hit is None:
-            return [b]
-        if depth >= 3:
-            return None
-        xs = (hit.xmin - DETOUR_MARGIN_M, hit.xmax + DETOUR_MARGIN_M)
-        if b[0] < a[0]:
-            xs = xs[::-1]
-        options = []
-        for y in (hit.ymax + DETOUR_MARGIN_M, hit.ymin - DETOUR_MARGIN_M):
-            p1, p2 = (xs[0], y), (xs[1], y)
-            if geofence.contains(p1) and geofence.contains(p2):
-                options.append((abs(y - a[1]), p1, p2))
-        for _, p1, p2 in sorted(options):
-            route, pos = [], a
-            for q in (p1, p2, b):
-                sub = self._route_leg(pos, q, blocked, geofence, depth + 1)
-                if sub is None:
-                    break
-                route += sub
-                pos = q
-            else:
-                return route
-        return None
+    def decide(self, req):
+        return MissionDecision([wid for wid, _ in req.remaining], False, "mission order")

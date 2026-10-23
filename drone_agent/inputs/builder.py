@@ -167,7 +167,8 @@ def load_mission_input(path, now=None):
                     max(xs) + GEOFENCE_MARGIN_M, max(ys) + GEOFENCE_MARGIN_M)
     inputs.mission = Mission(name=m.get("name", "mission_input.json"), survey=survey,
                              altitude_m=m.get("altitude_m", 60.0),
-                             airspeed_kmh=m.get("airspeed_kmh", 36.0), geofence=geofence)
+                             airspeed_kmh=m.get("airspeed_kmh", 36.0), geofence=geofence,
+                             exclusion_clearance_m=m.get("exclusion_clearance_m", 100.0))
 
     # 環境：禁限航區當作永久限制；NOTAM 生效時間換算成以起飛為 0 的模擬秒數
     w = by["WEATHER"].data
