@@ -203,3 +203,9 @@ GIS       GIS_SURVEY   OK         （verified=false）
 3. 飛行中定期重新讀取天氣與 NOTAM（目前只在起飛前讀一次）。
 4. 運動層加入動態障礙物，RRT* 改為增量式重規劃。
 5. 以 NVIDIA Isaac Sim 做視覺感知，更新世界模型的信念狀態 b(s)。
+
+## Physical AI Drone：MCP 工具與安全閘道
+
+[`physical-ai-drone/`](physical-ai-drone/) 以本專案的 `drone_agent` 作為模擬後端，加入 11 個 MCP 工具、確定性安全閘道（認證、scope、防重放、失效即關閉、稽核）、對抗性測試與能耗基準測試。只有模擬，沒有任何實機控制路徑。詳見 [physical-ai-drone/README.md](physical-ai-drone/README.md)。
+
+專案層級的 Claude Code 子代理：`.claude/agents/physical-ai-drone-engineer.md`。

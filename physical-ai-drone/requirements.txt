@@ -1,0 +1,2 @@
+# MCP Python SDK 2.x (FastMCP was renamed MCPServer). Python 3.10+.
+mcp==2.3.0
